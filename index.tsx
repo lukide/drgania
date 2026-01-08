@@ -101,10 +101,10 @@ const processSignal = (rawData: DataPoint[], smoothingWindow: number, periodTole
   const u_processed = smoothSignal(u_original, smoothingWindow);
 
   // 3. Determine DC Offset (Mean)
-  // FIX: Instead of averaging the entire signal (which includes the high initial impulse),
-  // we average the last 25% of the signal where it should have settled.
-  // This ensures the oscillation tail trends to 0V.
-  const tailSampleCount = Math.max(Math.floor(u_processed.length * 0.25), 5);
+  // FIX: Average the last 20% of the signal.
+  // This assumes the signal settles to zero (or DC bias) at the end.
+  // This is critical for high-damping signals where the start is a huge impulse.
+  const tailSampleCount = Math.max(Math.floor(u_processed.length * 0.20), 10);
   const tailData = u_processed.slice(-tailSampleCount);
   const meanVoltage = tailData.reduce((a, b) => a + b, 0) / tailData.length;
 
@@ -205,14 +205,17 @@ const processSignal = (rawData: DataPoint[], smoothingWindow: number, periodTole
     u_smooth: u_smooth_norm,
     peaks: peaks_norm,
     zeroCrossings: crossings_norm, 
-    meanVoltage: 0, // Normalized mean is now 0
+    meanVoltage: 0, // Normalized mean is now 0 (relative)
     avgPeriodUs,
     isInverted: invert
   };
 };
 
 const fitExponentialCurve = (peaks: {x: number, y: number}[], meanVoltage: number): FitParams | null => {
-  if (peaks.length < 3) return null;
+  // CHANGED: Allow fit with at least 2 peaks instead of 3.
+  // This enables calculation for highly damped signals where only the first pulse
+  // and one subsequent small oscillation are detected.
+  if (peaks.length < 2) return null;
 
   const C = meanVoltage; 
 
@@ -233,6 +236,7 @@ const fitExponentialCurve = (peaks: {x: number, y: number}[], meanVoltage: numbe
     }
   }
 
+  // Need at least 2 valid log-transformable points
   if (count < 2) return null;
 
   const denominator = (count * sumT2 - sumT * sumT);
@@ -371,11 +375,16 @@ const App = () => {
               tickfont: { color: 'black' },
               gridcolor: '#e0e0e0',
               zerolinecolor: 'black',
-              range: [0, Math.max(...t)],
               showgrid: true,
-              showticklabels: true, // Force ticks
+              showticklabels: true, 
               ticks: 'outside',     // Ensure ticks are visible
-              automargin: true      // Ensure margin adapts
+              tickwidth: 1,
+              ticklen: 5,
+              showline: true,       // Show axis line
+              linewidth: 1,
+              linecolor: 'black',
+              range: [0, Math.max(...t)],
+              automargin: true
           },
           yaxis: {
               title: 'Napięcie [V]',
@@ -386,10 +395,15 @@ const App = () => {
               showgrid: true,
               showticklabels: true,
               ticks: 'outside',
+              tickwidth: 1,
+              ticklen: 5,
+              showline: true,
+              linewidth: 1,
+              linecolor: 'black',
               automargin: true
           },
           showlegend: false, // Hide Legend
-          margin: { l: 70, r: 30, t: 30, b: 70 }, // Adjusted margins
+          margin: { l: 80, r: 30, t: 30, b: 80 }, 
           width: 1000,
           height: 600
       };
