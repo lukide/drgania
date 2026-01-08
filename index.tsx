@@ -32,16 +32,38 @@ const parseFileContent = (content: string): DataPoint[] => {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
+    // Skip lines that look like metadata headers (usually start with quotes)
+    if (trimmed.startsWith('"') || trimmed.startsWith("'")) continue;
+
+    // Replace comma with dot for proper float parsing
     const cleanLine = trimmed.replace(/,/g, '.');
+    // Split by whitespace (handles tabs and spaces)
     const parts = cleanLine.split(/\s+/);
     
+    // We need at least Time and one Voltage
     if (parts.length >= 2) {
       const t = parseFloat(parts[0]);
-      const v = parseFloat(parts[1]);
+      const v1 = parseFloat(parts[1]);
+      
+      // Basic validity check
+      if (!Number.isFinite(t) || !Number.isFinite(v1)) continue;
 
-      if (Number.isFinite(t) && Number.isFinite(v)) {
-         data.push({ time: t, voltage: v });
+      // Filter out scope clipping/error values (often +/- 1E+308)
+      if (Math.abs(v1) > 1e30) continue;
+
+      let voltage = v1;
+
+      // Handle Envelope mode (3 columns: Time, Min, Max)
+      // If we have a 3rd column that is a valid number, we average V1 (Min) and V2 (Max)
+      // to estimate the signal center.
+      if (parts.length >= 3) {
+         const v2 = parseFloat(parts[2]);
+         if (Number.isFinite(v2) && Math.abs(v2) < 1e30) {
+             voltage = (v1 + v2) / 2;
+         }
       }
+
+      data.push({ time: t, voltage: voltage });
     }
   }
   return data;
@@ -78,8 +100,13 @@ const processSignal = (rawData: DataPoint[], smoothingWindow: number, periodTole
   // 2. Apply Smoothing (Noise Filter)
   const u_processed = smoothSignal(u_original, smoothingWindow);
 
-  // 3. Determine DC Offset (Mean) before normalization
-  const meanVoltage = u_processed.reduce((a, b) => a + b, 0) / u_processed.length;
+  // 3. Determine DC Offset (Mean)
+  // FIX: Instead of averaging the entire signal (which includes the high initial impulse),
+  // we average the last 25% of the signal where it should have settled.
+  // This ensures the oscillation tail trends to 0V.
+  const tailSampleCount = Math.max(Math.floor(u_processed.length * 0.25), 5);
+  const tailData = u_processed.slice(-tailSampleCount);
+  const meanVoltage = tailData.reduce((a, b) => a + b, 0) / tailData.length;
 
   // 4. Find ALL Potential Rising Zero Crossings
   const rawCrossings: { t: number, idx: number }[] = [];
@@ -344,8 +371,11 @@ const App = () => {
               tickfont: { color: 'black' },
               gridcolor: '#e0e0e0',
               zerolinecolor: 'black',
-              range: [0, Math.max(...t)], // Start exactly at 0, hide negative pre-trigger
-              showgrid: true
+              range: [0, Math.max(...t)],
+              showgrid: true,
+              showticklabels: true, // Force ticks
+              ticks: 'outside',     // Ensure ticks are visible
+              automargin: true      // Ensure margin adapts
           },
           yaxis: {
               title: 'Napięcie [V]',
@@ -353,10 +383,13 @@ const App = () => {
               tickfont: { color: 'black' },
               gridcolor: '#e0e0e0',
               zerolinecolor: 'black',
-              showgrid: true
+              showgrid: true,
+              showticklabels: true,
+              ticks: 'outside',
+              automargin: true
           },
           showlegend: false, // Hide Legend
-          margin: { l: 60, r: 20, t: 20, b: 60 }, // Reduced top margin
+          margin: { l: 70, r: 30, t: 30, b: 70 }, // Adjusted margins
           width: 1000,
           height: 600
       };
@@ -534,7 +567,7 @@ const App = () => {
             Signal<br/>Analyzer<br/><span className="text-xl text-[#b87333]">2077</span>
           </h1>
           <p className="text-sm text-gray-400 mt-4">
-            Wizualizacja i analiza danych inżynieryjnych w estetyce Steam/Cyber.
+            Wizualizacja i analiza danych
           </p>
         </div>
 
