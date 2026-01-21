@@ -212,9 +212,7 @@ const processSignal = (rawData: DataPoint[], smoothingWindow: number, periodTole
 };
 
 const fitExponentialCurve = (peaks: {x: number, y: number}[], meanVoltage: number): FitParams | null => {
-  // CHANGED: Allow fit with at least 2 peaks instead of 3.
-  // This enables calculation for highly damped signals where only the first pulse
-  // and one subsequent small oscillation are detected.
+  // Allow fit with at least 2 peaks instead of 3.
   if (peaks.length < 2) return null;
 
   const C = meanVoltage; 
@@ -236,7 +234,6 @@ const fitExponentialCurve = (peaks: {x: number, y: number}[], meanVoltage: numbe
     }
   }
 
-  // Need at least 2 valid log-transformable points
   if (count < 2) return null;
 
   const denominator = (count * sumT2 - sumT * sumT);
@@ -342,6 +339,9 @@ const App = () => {
 
       const traces = [traceReport];
 
+      // Calculate Range for Y-Axis manually to ensure fit
+      const allY = [...u_smooth];
+
       // Trace 2: Approximation
       if (fit && peaks.length > 0) {
         const startT = peaks[0].x;
@@ -352,7 +352,9 @@ const App = () => {
         const fitY = [];
         for(let val=startT; val<=endT; val+=step) {
             fitX.push(val);
-            fitY.push(fit.A * Math.exp(fit.beta * val) + fit.C);
+            const yVal = fit.A * Math.exp(fit.beta * val) + fit.C;
+            fitY.push(yVal);
+            allY.push(yVal); // Include fit values in range calculation
         }
 
         const traceFit = {
@@ -365,8 +367,14 @@ const App = () => {
         traces.push(traceFit);
       }
 
+      // Explicitly calculate min/max to force Plotly to adapt to inverted data
+      let yMin = Math.min(...allY);
+      let yMax = Math.max(...allY);
+      let padding = (yMax - yMin) * 0.1;
+      if (padding === 0) padding = 1;
+
       const layoutReport = {
-          title: '', // Removed title
+          title: '', 
           plot_bgcolor: 'white',
           paper_bgcolor: 'white',
           xaxis: {
@@ -377,10 +385,10 @@ const App = () => {
               zerolinecolor: 'black',
               showgrid: true,
               showticklabels: true, 
-              ticks: 'outside',     // Ensure ticks are visible
+              ticks: 'outside',
               tickwidth: 1,
               ticklen: 5,
-              showline: true,       // Show axis line
+              showline: true,
               linewidth: 1,
               linecolor: 'black',
               range: [0, Math.max(...t)],
@@ -400,12 +408,13 @@ const App = () => {
               showline: true,
               linewidth: 1,
               linecolor: 'black',
+              range: [yMin - padding, yMax + padding], // Force correct range
               automargin: true
           },
-          showlegend: false, // Hide Legend
-          margin: { l: 80, r: 30, t: 30, b: 80 }, 
-          width: 1000,
-          height: 600
+          showlegend: false, 
+          margin: { l: 70, r: 20, t: 20, b: 70 }, 
+          width: 800, // Reduced from 1000 for better Word doc fit
+          height: 500 // Reduced from 600
       };
 
       // @ts-ignore
@@ -415,9 +424,9 @@ const App = () => {
       await window.Plotly.downloadImage(hiddenReportRef.current, {
           format: 'png',
           filename: 'sygnal_raport_inzynierski',
-          height: 600,
-          width: 1000,
-          scale: 2
+          height: 500,
+          width: 800,
+          scale: 2 // Scale 2x ensures high quality (Retina) while logical size is small
       });
   };
 
