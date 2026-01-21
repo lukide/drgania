@@ -339,10 +339,15 @@ const App = () => {
 
       const traces = [traceReport];
 
-      // Calculate Range for Y-Axis manually to ensure fit
-      const allY = [...u_smooth];
+      // Calculate Range: Filter for visible data only (t >= 0) to ignore pre-trigger noise
+      const visibleValues: number[] = [];
+      for(let i=0; i<t.length; i++) {
+          if (t[i] >= 0) {
+              visibleValues.push(u_smooth[i]);
+          }
+      }
 
-      // Trace 2: Approximation
+      // Trace 2: Approximation & Range Extension
       if (fit && peaks.length > 0) {
         const startT = peaks[0].x;
         const endT = t[t.length-1]; 
@@ -354,7 +359,7 @@ const App = () => {
             fitX.push(val);
             const yVal = fit.A * Math.exp(fit.beta * val) + fit.C;
             fitY.push(yVal);
-            allY.push(yVal); // Include fit values in range calculation
+            visibleValues.push(yVal); // Include fit line in range calculation
         }
 
         const traceFit = {
@@ -367,11 +372,9 @@ const App = () => {
         traces.push(traceFit);
       }
 
-      // Explicitly calculate min/max to force Plotly to adapt to inverted data
-      let yMin = Math.min(...allY);
-      let yMax = Math.max(...allY);
-      let padding = (yMax - yMin) * 0.1;
-      if (padding === 0) padding = 1;
+      // Calculate symmetric range based on Max Amplitude of visible section
+      const maxAbs = Math.max(...visibleValues.map(v => Math.abs(v)));
+      const limit = maxAbs * 1.1; // 10% padding
 
       const layoutReport = {
           title: '', 
@@ -408,13 +411,13 @@ const App = () => {
               showline: true,
               linewidth: 1,
               linecolor: 'black',
-              range: [yMin - padding, yMax + padding], // Force correct range
+              range: [-limit, limit], // Symmetric range
               automargin: true
           },
           showlegend: false, 
           margin: { l: 70, r: 20, t: 20, b: 70 }, 
-          width: 800, // Reduced from 1000 for better Word doc fit
-          height: 500 // Reduced from 600
+          width: 700, 
+          height: 450 
       };
 
       // @ts-ignore
@@ -424,9 +427,9 @@ const App = () => {
       await window.Plotly.downloadImage(hiddenReportRef.current, {
           format: 'png',
           filename: 'sygnal_raport_inzynierski',
-          height: 500,
-          width: 800,
-          scale: 2 // Scale 2x ensures high quality (Retina) while logical size is small
+          height: 450,
+          width: 700,
+          scale: 2 
       });
   };
 
